@@ -13,6 +13,7 @@ use std::hash::{Hash, Hasher};
 use std::io::{self, BufRead, Seek};
 use std::panic;
 use std::process;
+use std::path::PathBuf;
 
 use fnv;
 use tempfile;
@@ -168,10 +169,28 @@ fn fork_impl(test_name: &str, fork_id: String,
         }
 
         occurs.push_str(&fork_id);
-        let mut command =
-            process::Command::new(
-                env::current_exe()
-                    .expect("current_exe() failed, cannot fork"));
+
+        fn get_runner<'a>(runner: &'a Option<String>) -> Option<(&'a str, impl Iterator<Item=&'a str> + 'a)> {
+            let runner = runner.as_ref()?.trim();
+            if runner == "" {
+                return None;
+            }
+            let mut splitted = runner.split(' ');
+            let exe = splitted.next()?;
+            Some((exe, splitted))
+        }
+
+        let cur_exe = env::current_exe().expect("failed to fork: cannot find executable");
+        let runner_str = env::var("RUSTY_FORK_RUNNER").ok();
+        let mut command =if let Some((runner_exe, runner_args)) = get_runner(&runner_str) {
+            let mut command = process::Command::new(PathBuf::from(runner_exe));
+            command.args(runner_args);
+            command.arg(cur_exe);
+            command
+        } else {
+            process::Command::new(cur_exe)
+        };
+
         command
             .args(cmdline::strip_cmdline(env::args())?)
             .args(cmdline::RUN_TEST_ARGS)
